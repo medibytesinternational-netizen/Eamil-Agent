@@ -112,7 +112,7 @@ function Agent({ onLogout }: { onLogout: () => void }) {
       <main className="main">
         {page === 'dashboard'
           ? <Dashboard data={data} chat={chat} onAsk={ask} onSettings={() => setSettingsOpen(true)} />
-          : <Chat ref={chatRef} chat={chat} />}
+          : <Chat ref={chatRef} chat={chat} name={display} />}
       </main>
 
       {settingsOpen && <Settings onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}

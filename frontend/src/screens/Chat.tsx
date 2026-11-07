@@ -1,13 +1,13 @@
-import { ArrowUp, SquarePen } from 'lucide-react'
+import { AlertTriangle, PenLine, Reply, SendHorizontal, Sparkles, SquarePen, Wallet } from 'lucide-react'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { VoiceButton, voiceLabel } from '../components/ui'
 import type { useChat } from '../hooks/useChat'
 
-const SUGGESTIONS = [
-  'Anything urgent today?',
-  'Which bills are due this week?',
-  "Who's waiting on my reply?",
-  'Find my latest bank statement',
+const CHIPS: { label: string; icon: typeof Sparkles; text: string; prefill?: boolean }[] = [
+  { label: 'Urgent today', icon: AlertTriangle, text: 'Anything urgent today?' },
+  { label: 'Bills due', icon: Wallet, text: 'Which bills are due this week?' },
+  { label: 'Waiting on me', icon: Reply, text: "Who's waiting on my reply?" },
+  { label: 'Draft a reply', icon: PenLine, text: 'Draft a reply to ', prefill: true },
 ]
 
 export type ChatHandle = { prefill: (text: string) => void }
@@ -18,18 +18,20 @@ function Rich({ text }: { text: string }) {
   return <>{parts.map((p, i) => p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p)}</>
 }
 
-export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat> }>(function Chat({ chat }, ref) {
+function greeting() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening'
+}
+
+export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat>; name: string }>(function Chat({ chat, name }, ref) {
   const { messages, busy, toolChip, voiceState, ask, toggleVoice, clear } = chat
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const endRef = useRef<HTMLDivElement>(null)
 
-  useImperativeHandle(ref, () => ({ prefill: t => { setInput(t); setTimeout(() => inputRef.current?.focus(), 30) } }))
+  const focus = (t: string) => { setInput(t); setTimeout(() => { const el = inputRef.current; el?.focus(); el?.setSelectionRange(t.length, t.length) }, 30) }
+  useImperativeHandle(ref, () => ({ prefill: focus }))
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }) }, [messages, toolChip])
-  useEffect(() => {
-    const el = inputRef.current
-    if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px` }
-  }, [input])
 
   const send = () => {
     const t = input.trim()
@@ -38,44 +40,60 @@ export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat> }>
     ask(t)
   }
   const empty = messages.length === 0
+  const status = voiceState !== 'idle' ? voiceLabel(voiceState) : busy ? 'Thinking…' : 'Online'
 
   return (
     <div className="agent-page">
-      <div className="card agent-card">
-        <header className="agent-head">
-          <div>
-            <h1>Agent</h1>
-            <p>{voiceState === 'idle' ? (busy ? 'Thinking…' : 'Searches, reads and drafts — never sends') : voiceLabel(voiceState)}</p>
-          </div>
-          <button className="btn outline sm" onClick={clear} disabled={empty}><SquarePen size={14} /> New chat</button>
+      <div className={`ai-card ${empty ? 'is-empty' : ''}`}>
+        <header className="ai-top">
+          <span className="ai-badge"><span className="ring-orb sm" aria-hidden /> Inbox Agent <em>{status}</em></span>
+          <button className="ai-icon-btn" onClick={clear} disabled={empty} aria-label="New chat" title="New chat"><SquarePen size={17} /></button>
         </header>
 
-        <div className="thread" aria-live="polite">
-          {empty && (
-            <div className="chat-empty">
-              <div className="orb" aria-hidden />
-              <h2>How can I help with your email?</h2>
-              <div className="suggestions">
-                {SUGGESTIONS.map(s => <button key={s} className="suggestion" onClick={() => ask(s)}>{s}</button>)}
-              </div>
+        <div className="ai-thread" aria-live="polite">
+          {empty ? (
+            <div className="ai-hero">
+              <span className="ring-orb" aria-hidden />
+              <h1>{greeting()}, {name}! How<br />can I assist you?</h1>
+            </div>
+          ) : (
+            <div className="ai-messages">
+              {messages.map((m, i) => (
+                <div key={i} className={`msg ${m.role} ${m.pending ? 'pending' : ''}`}>
+                  {m.role === 'agent' && <span className="ring-orb xs" aria-hidden />}
+                  <div className="bubble">{m.role === 'agent' ? <Rich text={m.text} /> : m.text}</div>
+                </div>
+              ))}
+              {toolChip && (
+                <div className="msg agent"><span className="ring-orb xs spin" aria-hidden />
+                  <div className="bubble typing"><span /><span /><span /><em>{toolChip}</em></div></div>
+              )}
+              <div ref={endRef} />
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={`msg ${m.role} ${m.pending ? 'pending' : ''}`}>
-              <div className="bubble">{m.role === 'agent' ? <Rich text={m.text} /> : m.text}</div>
-            </div>
-          ))}
-          {toolChip && <div className="msg agent"><div className="bubble typing"><span /><span /><span /><em>{toolChip}</em></div></div>}
-          <div ref={endRef} />
-        </div>
 
-        <form className="composer" onSubmit={e => { e.preventDefault(); send() }}>
-          <textarea ref={inputRef} rows={1} value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about your email…"
-            aria-label="Message" data-chat-input
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
-          <VoiceButton state={voiceState} onClick={toggleVoice} />
-          <button type="submit" className="send-btn" aria-label="Send" disabled={busy || !input.trim()}><ArrowUp size={18} strokeWidth={2.6} /></button>
-        </form>
+          <form className="ai-composer" onSubmit={e => { e.preventDefault(); send() }}>
+            <div className="ai-input">
+              <Sparkles size={17} aria-hidden />
+              <textarea ref={inputRef} rows={empty ? 3 : 1} value={input} onChange={e => setInput(e.target.value)}
+                placeholder="Start your request, and let your agent handle everything." aria-label="Message" data-chat-input
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
+            </div>
+            <div className="ai-tools">
+              <div className="ai-chips">
+                {CHIPS.map(c => (
+                  <button type="button" key={c.label} className="ai-chip" onClick={() => (c.prefill ? focus(c.text) : ask(c.text))} disabled={busy}>
+                    <c.icon size={15} aria-hidden /><span>{c.label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="ai-actions">
+                <VoiceButton state={voiceState} onClick={toggleVoice} />
+                <button type="submit" className="ai-send" aria-label="Send" disabled={busy || !input.trim()}><SendHorizontal size={18} /></button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )
