@@ -1,4 +1,4 @@
-import { Bell, Bot, LayoutGrid, Mail, Search, X } from 'lucide-react'
+import { Bell, Bot, LayoutGrid, Mail, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Avatar } from './components/ui'
 import { useAgentData } from './hooks/useAgentData'
@@ -45,10 +45,8 @@ const DOCK: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
 function Agent({ onLogout }: { onLogout: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
-  const [search, setSearch] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const chatRef = useRef<ChatHandle>(null)
-  const searchRef = useRef<HTMLInputElement>(null)
 
   const onError = useCallback((e: unknown) => {
     if (e instanceof AuthError) onLogout()
@@ -70,18 +68,8 @@ function Agent({ onLogout }: { onLogout: () => void }) {
     if (!data.health?.vapid_public_key) return
     try { setToast(await enablePush(data.health.vapid_public_key)) } catch (e) { onError(e) }
   }
-  const submitSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    const q = search.trim()
-    if (!q) return
-    setSearch('')
-    searchRef.current?.blur()
-    ask(`Find emails about: ${q}`)
-  }
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); return }
       const el = e.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName)) return
       if (e.code === 'Space' && !e.repeat) { e.preventDefault(); chat.toggleVoice() }
@@ -99,13 +87,17 @@ function Agent({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className={`shell on-${page}`}>
-      <header className="topbar">
-        <form className="search" onSubmit={submitSearch} role="search">
-          <Search size={18} aria-hidden />
-          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your email" aria-label="Search your email" />
-          <kbd>Ctrl K</kbd>
-        </form>
-        <div className="top-right">
+      <header className="dock">
+        <nav className="dock-nav" aria-label="Pages">
+          {DOCK.map(d => (
+            <button key={d.id} className={page === d.id ? 'on' : ''} onClick={() => setPage(d.id)} aria-current={page === d.id ? 'page' : undefined}>
+              <d.icon size={20} aria-hidden />
+              <span className="dock-label">{d.label}</span>
+              {d.id === 'dashboard' && urgent > 0 && <span className="count">{urgent}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="dock-right">
           <a className="icon-btn" href="https://mail.google.com" target="_blank" rel="noreferrer" aria-label="Open Gmail"><Mail size={18} /></a>
           <button className="icon-btn" onClick={pushOn} aria-label="Turn on notifications">
             <Bell size={18} />{urgent > 0 && <span className="dot-badge" />}
@@ -122,16 +114,6 @@ function Agent({ onLogout }: { onLogout: () => void }) {
           ? <Dashboard data={data} chat={chat} onAsk={ask} onSettings={() => setSettingsOpen(true)} />
           : <Chat ref={chatRef} chat={chat} />}
       </main>
-
-      <nav className="dock" aria-label="Pages">
-        {DOCK.map(d => (
-          <button key={d.id} className={page === d.id ? 'on' : ''} onClick={() => setPage(d.id)} aria-current={page === d.id ? 'page' : undefined}>
-            <d.icon size={20} aria-hidden />
-            <span>{d.label}</span>
-            {d.id === 'dashboard' && urgent > 0 && <span className="count">{urgent}</span>}
-          </button>
-        ))}
-      </nav>
 
       {settingsOpen && <Settings onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}
       {toast && <div className="toast" role="status">{toast}</div>}
