@@ -1,4 +1,4 @@
-import { Bell, Bot, LayoutGrid, Mail, X } from 'lucide-react'
+import { Bell, Bot, LayoutGrid, Mail, Settings as Cog, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Avatar } from './components/ui'
 import { useAgentData } from './hooks/useAgentData'
@@ -46,6 +46,7 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const chatRef = useRef<ChatHandle>(null)
 
   const onError = useCallback((e: unknown) => {
@@ -112,9 +113,24 @@ function Agent({ onLogout }: { onLogout: () => void }) {
       <main className="main">
         {page === 'dashboard'
           ? <Dashboard data={data} chat={chat} onAsk={ask} onSettings={() => setSettingsOpen(true)} />
-          : <Chat ref={chatRef} chat={chat} name={display} />}
+          : <Chat ref={chatRef} chat={chat} name={display} onMenu={() => setMenuOpen(true)} />}
       </main>
 
+      {menuOpen && (
+        <div className="sheet-backdrop menu-backdrop" role="dialog" aria-modal="true" aria-label="Menu" onClick={e => e.target === e.currentTarget && setMenuOpen(false)}>
+          <div className="menu-sheet">
+            <div className="menu-profile">
+              <span className="avatar-wrap"><Avatar name={display} size={44} /><span className={`presence ${connected ? 'ok' : 'bad'}`} /></span>
+              <span><strong>{display}</strong><small>{account}</small></span>
+            </div>
+            <button className="menu-item" onClick={() => { setMenuOpen(false); setPage('dashboard') }}><LayoutGrid size={18} /> Dashboard
+              {urgent > 0 && <span className="count">{urgent}</span>}</button>
+            <a className="menu-item" href="https://mail.google.com" target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}><Mail size={18} /> Open Gmail</a>
+            <button className="menu-item" onClick={() => { setMenuOpen(false); pushOn() }}><Bell size={18} /> Turn on notifications</button>
+            <button className="menu-item" onClick={() => { setMenuOpen(false); setSettingsOpen(true) }}><Cog size={18} /> Settings</button>
+          </div>
+        </div>
+      )}
       {settingsOpen && <Settings onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
