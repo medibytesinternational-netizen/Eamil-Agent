@@ -40,44 +40,41 @@ export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat> }>
   const empty = messages.length === 0
 
   return (
-    <div className="page chat">
-      <header className="nav-bar">
-        <span className="nav-spacer" />
-        <div className="nav-title">
-          <strong>Inbox Assistant</strong>
-          <small>{voiceState === 'idle' ? (busy ? 'Thinking…' : 'Drafts only — never sends') : voiceLabel(voiceState)}</small>
-        </div>
-        <button className="circle-btn plain" onClick={clear} disabled={empty} aria-label="New chat"><SquarePen size={18} /></button>
-      </header>
+    <div className="agent-page">
+      <div className="card agent-card">
+        <header className="agent-head">
+          <div>
+            <h1>Agent</h1>
+            <p>{voiceState === 'idle' ? (busy ? 'Thinking…' : 'Searches, reads and drafts — never sends') : voiceLabel(voiceState)}</p>
+          </div>
+          <button className="btn outline sm" onClick={clear} disabled={empty}><SquarePen size={14} /> New chat</button>
+        </header>
 
-      <div className="thread" aria-live="polite">
-        {empty && (
-          <div className="chat-empty">
-            <div className="orb" aria-hidden />
-            <h1>How can I help?</h1>
-            <p>Ask about your email, find old messages, or have me draft a reply for you to send.</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map(s => <button key={s} className="suggestion" onClick={() => ask(s)}>{s}</button>)}
+        <div className="thread" aria-live="polite">
+          {empty && (
+            <div className="chat-empty">
+              <div className="orb" aria-hidden />
+              <h2>How can I help with your email?</h2>
+              <div className="suggestions">
+                {SUGGESTIONS.map(s => <button key={s} className="suggestion" onClick={() => ask(s)}>{s}</button>)}
+              </div>
             </div>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role} ${m.pending ? 'pending' : ''}`}>
-            <div className="bubble">{m.role === 'agent' ? <Rich text={m.text} /> : m.text}</div>
-          </div>
-        ))}
-        {toolChip && <div className="msg agent"><div className="bubble typing"><span /><span /><span /><em>{toolChip}</em></div></div>}
-        <div ref={endRef} />
-      </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={`msg ${m.role} ${m.pending ? 'pending' : ''}`}>
+              <div className="bubble">{m.role === 'agent' ? <Rich text={m.text} /> : m.text}</div>
+            </div>
+          ))}
+          {toolChip && <div className="msg agent"><div className="bubble typing"><span /><span /><span /><em>{toolChip}</em></div></div>}
+          <div ref={endRef} />
+        </div>
 
-      <div className="composer-wrap">
         <form className="composer" onSubmit={e => { e.preventDefault(); send() }}>
-          <textarea ref={inputRef} rows={1} value={input} onChange={e => setInput(e.target.value)} placeholder="Message"
+          <textarea ref={inputRef} rows={1} value={input} onChange={e => setInput(e.target.value)} placeholder="Ask about your email…"
             aria-label="Message" data-chat-input
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} />
-          {input.trim()
-            ? <button type="submit" className="send-btn" aria-label="Send" disabled={busy}><ArrowUp size={18} strokeWidth={2.6} /></button>
-            : <VoiceButton state={voiceState} onClick={toggleVoice} />}
+          <VoiceButton state={voiceState} onClick={toggleVoice} />
+          <button type="submit" className="send-btn" aria-label="Send" disabled={busy || !input.trim()}><ArrowUp size={18} strokeWidth={2.6} /></button>
         </form>
       </div>
     </div>

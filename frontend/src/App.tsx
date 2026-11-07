@@ -1,12 +1,13 @@
-import { LayoutGrid, Mail, MessageCircle, X } from 'lucide-react'
+import { Bell, Bot, LayoutGrid, Mail, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Avatar } from './components/ui'
 import { useAgentData } from './hooks/useAgentData'
 import { useChat } from './hooks/useChat'
 import { api, AuthError, enablePush } from './lib/api'
 import { Chat, type ChatHandle } from './screens/Chat'
 import { Dashboard } from './screens/Dashboard'
 
-type Page = 'dashboard' | 'chat'
+type Page = 'dashboard' | 'agent'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
@@ -24,28 +25,30 @@ function Login({ onDone }: { onDone: () => void }) {
   }
   return (
     <div className="login-page">
-      <form className="login" onSubmit={submit}>
-        <span className="app-icon" aria-hidden><Mail size={30} /></span>
+      <form className="card login" onSubmit={submit}>
+        <span className="logo" aria-hidden><Mail size={26} /></span>
         <h1>Inbox Agent</h1>
         <p>Enter your app password to continue.</p>
         <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" aria-label="Password" autoFocus />
         {err && <span className="err">{err}</span>}
-        <button type="submit" className="btn-primary">Continue</button>
+        <button type="submit" className="btn primary wide">Continue</button>
       </form>
     </div>
   )
 }
 
-const TABS: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
+const DOCK: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { id: 'chat', label: 'Chat', icon: MessageCircle },
+  { id: 'agent', label: 'Agent', icon: Bot },
 ]
 
 function Agent({ onLogout }: { onLogout: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
+  const [search, setSearch] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const chatRef = useRef<ChatHandle>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const onError = useCallback((e: unknown) => {
     if (e instanceof AuthError) onLogout()
@@ -58,7 +61,7 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   useEffect(() => { window.scrollTo(0, 0) }, [page])
 
   const ask = (q?: string, prefill = false) => {
-    setPage('chat')
+    setPage('agent')
     if (!q) return
     if (prefill) setTimeout(() => chatRef.current?.prefill(q), 60)
     else chat.ask(q)
@@ -67,49 +70,65 @@ function Agent({ onLogout }: { onLogout: () => void }) {
     if (!data.health?.vapid_public_key) return
     try { setToast(await enablePush(data.health.vapid_public_key)) } catch (e) { onError(e) }
   }
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    const q = search.trim()
+    if (!q) return
+    setSearch('')
+    searchRef.current?.blur()
+    ask(`Find emails about: ${q}`)
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); return }
       const el = e.target as HTMLElement
-      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'SUMMARY', 'A'].includes(el.tagName)) return
-      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setPage('chat'); chat.toggleVoice() }
-      if (e.key === '/') { e.preventDefault(); setPage('chat'); setTimeout(() => (document.querySelector('[data-chat-input]') as HTMLElement)?.focus(), 60) }
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName)) return
+      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); chat.toggleVoice() }
+      if (e.key === '/') { e.preventDefault(); setPage('agent'); setTimeout(() => (document.querySelector('[data-chat-input]') as HTMLElement)?.focus(), 60) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [chat.toggleVoice])
 
+  const account = data.health?.account ?? ''
+  const name = account.split('@')[0].replace(/[0-9._]+/g, ' ').trim()
+  const display = name ? name[0].toUpperCase() + name.slice(1) : 'You'
   const urgent = data.stats?.metrics.urgent.value ?? 0
+  const connected = !!data.health?.gmail_connected && !data.offline
 
   return (
     <div className={`shell on-${page}`}>
-      <aside className="sidebar">
-        <div className="brand"><span className="app-icon sm" aria-hidden><Mail size={16} /></span>Inbox Agent</div>
-        <nav aria-label="Pages">
-          {TABS.map(t => (
-            <button key={t.id} className={`side-item ${page === t.id ? 'on' : ''}`} onClick={() => setPage(t.id)} aria-current={page === t.id ? 'page' : undefined}>
-              <t.icon size={18} aria-hidden />{t.label}
-              {t.id === 'dashboard' && urgent > 0 && <span className="badge">{urgent}</span>}
-            </button>
-          ))}
-        </nav>
-        <div className="side-foot">
-          <span className={`dot ${data.health?.gmail_connected && !data.offline ? 'ok' : 'bad'}`} />
-          <span>{data.health?.account ?? 'Connecting…'}</span>
+      <header className="topbar">
+        <form className="search" onSubmit={submitSearch} role="search">
+          <Search size={18} aria-hidden />
+          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your email" aria-label="Search your email" />
+          <kbd>Ctrl K</kbd>
+        </form>
+        <div className="top-right">
+          <a className="icon-btn" href="https://mail.google.com" target="_blank" rel="noreferrer" aria-label="Open Gmail"><Mail size={18} /></a>
+          <button className="icon-btn" onClick={pushOn} aria-label="Turn on notifications">
+            <Bell size={18} />{urgent > 0 && <span className="dot-badge" />}
+          </button>
+          <button className="profile" onClick={() => setSettingsOpen(true)} aria-label="Account and settings">
+            <span className="avatar-wrap"><Avatar name={display} size={40} /><span className={`presence ${connected ? 'ok' : 'bad'}`} /></span>
+            <span className="profile-text"><strong>{display}</strong><small>{account}</small></span>
+          </button>
         </div>
-      </aside>
+      </header>
 
-      <main className="content">
+      <main className="main">
         {page === 'dashboard'
-          ? <Dashboard data={data} onAsk={ask} onSettings={() => setSettingsOpen(true)} onPush={pushOn} />
+          ? <Dashboard data={data} chat={chat} onAsk={ask} onSettings={() => setSettingsOpen(true)} />
           : <Chat ref={chatRef} chat={chat} />}
       </main>
 
-      <nav className="tabbar" aria-label="Pages">
-        {TABS.map(t => (
-          <button key={t.id} className={page === t.id ? 'on' : ''} onClick={() => setPage(t.id)} aria-current={page === t.id ? 'page' : undefined}>
-            <span className="tab-icon"><t.icon size={22} aria-hidden />{t.id === 'dashboard' && urgent > 0 && <span className="badge">{urgent}</span>}</span>
-            {t.label}
+      <nav className="dock" aria-label="Pages">
+        {DOCK.map(d => (
+          <button key={d.id} className={page === d.id ? 'on' : ''} onClick={() => setPage(d.id)} aria-current={page === d.id ? 'page' : undefined}>
+            <d.icon size={20} aria-hidden />
+            <span>{d.label}</span>
+            {d.id === 'dashboard' && urgent > 0 && <span className="count">{urgent}</span>}
           </button>
         ))}
       </nav>
@@ -145,51 +164,31 @@ function Settings({ onClose, onErr, onLogout }: { onClose: () => void; onErr: (e
 
   return (
     <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="sheet">
-        <div className="grabber" aria-hidden />
-        <header className="sheet-bar">
-          <button className="text-btn" onClick={onClose}>Cancel</button>
-          <strong>Settings</strong>
-          <button className="text-btn bold" onClick={save}>Done</button>
+      <div className="card sheet">
+        <header className="sheet-head">
+          <h2>Settings</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
-
-        <p className="group-label">Notifications</p>
-        <div className="group">
-          <label className="cell field">Quiet hours
-            <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
-          </label>
-        </div>
-        <p className="group-note">Security alerts still come through during quiet hours.</p>
-
-        <p className="group-label">VIP senders</p>
-        <div className="group">
-          <textarea className="cell" rows={4} value={vips} onChange={e => setVips(e.target.value)} placeholder="One email or domain per line" aria-label="VIP senders" />
-        </div>
-
-        {!!s?.rules.length && <>
-          <p className="group-label">Learned rules</p>
-          <div className="group">
-            {s.rules.map(r => (
-              <div key={r.id} className="cell row-between">
-                <span>{r.action === 'always_alert' ? 'Always alert' : r.action === 'never_alert' ? 'Never alert' : r.action} · {r.pattern}</span>
-                <button className="text-btn destructive" onClick={() => delRule(r.id)}>Remove</button>
-              </div>
-            ))}
+        <label className="field">Quiet hours
+          <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
+          <small>Security alerts still come through.</small>
+        </label>
+        <label className="field">VIP senders
+          <textarea rows={4} value={vips} onChange={e => setVips(e.target.value)} placeholder="One email or domain per line" />
+        </label>
+        {!!s?.rules.length && (
+          <div className="field">Learned rules
+            <ul className="rules">{s.rules.map(r => (
+              <li key={r.id}><span>{r.action === 'always_alert' ? 'Always alert' : r.action === 'never_alert' ? 'Never alert' : r.action} · {r.pattern}</span>
+                <button className="link-btn" onClick={() => delRule(r.id)}>Remove</button></li>
+            ))}</ul>
           </div>
-        </>}
-
-        {usage && <>
-          <p className="group-label">Voice usage (30 days)</p>
-          <div className="group">
-            <div className="cell row-between"><span>Sessions</span><span className="muted">{usage.voice_sessions_30d}</span></div>
-            <div className="cell row-between"><span>Minutes</span><span className="muted">{usage.voice_minutes_30d}</span></div>
-          </div>
-        </>}
-
-        <div className="group">
-          <button className="cell text-btn destructive center" onClick={logout}>Sign Out</button>
+        )}
+        {usage && <p className="muted">Voice, last 30 days: {usage.voice_sessions_30d} sessions · {usage.voice_minutes_30d} min</p>}
+        <div className="sheet-actions">
+          <button className="btn primary" onClick={save}>Save</button>
+          <button className="btn outline" onClick={logout}>Sign out</button>
         </div>
-        <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
       </div>
     </div>
   )
