@@ -94,3 +94,16 @@ def test_no_send_tools_exposed():
     names = {t["name"] for t in tools.TOOLS}
     assert not any(n.startswith(("send", "delete", "trash", "forward")) for n in names)
     assert not hasattr(gmail_client, "send_message")
+
+
+def test_pct_change_and_daily_counts():
+    from datetime import date, datetime
+    from zoneinfo import ZoneInfo
+
+    from app.insights import daily_counts, pct_change
+
+    assert pct_change(12, 10) == 20 and pct_change(0, 0) is None and pct_change(5, 0) is None and pct_change(5, 10) == -50
+    tz = ZoneInfo("Asia/Kolkata")
+    days = daily_counts([datetime(2026, 11, 7, 9, tzinfo=tz), datetime(2026, 11, 7, 23, tzinfo=tz),
+                         datetime(2026, 11, 1, 8, tzinfo=tz), datetime(2026, 10, 20, tzinfo=tz)], date(2026, 11, 7))
+    assert len(days) == 7 and days[-1]["count"] == 2 and days[0]["date"] == "2026-11-01" and days[0]["count"] == 1

@@ -144,6 +144,20 @@ async def dashboard():
     }
 
 
+@app.get("/api/stats")
+async def get_stats(range: str = "7d"):
+    from .insights import stats
+
+    return await stats("today" if range == "today" else "7d")
+
+
+@app.get("/api/insight")
+async def get_insight(refresh: bool = False):
+    from .insights import insight
+
+    return await insight(force=refresh)
+
+
 @app.get("/api/events")
 async def events():
     return EventSourceResponse(stream())
