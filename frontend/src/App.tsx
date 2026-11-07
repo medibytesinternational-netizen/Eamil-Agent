@@ -1,30 +1,17 @@
-import { X } from 'lucide-react'
+import { LayoutGrid, Mail, MessageCircle, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAgentData } from './hooks/useAgentData'
 import { useChat } from './hooks/useChat'
 import { api, AuthError, enablePush } from './lib/api'
-import { Ask, type AskHandle } from './screens/Ask'
-import { Home } from './screens/Home'
-import { Insight } from './screens/Insight'
+import { Chat, type ChatHandle } from './screens/Chat'
+import { Dashboard } from './screens/Dashboard'
 
-type Screen = 'home' | 'ask' | 'insight'
-type Layout = 'phone' | 'tablet' | 'desktop'
-
-function useLayout(): Layout {
-  const get = (): Layout => (window.innerWidth >= 1200 ? 'desktop' : window.innerWidth >= 768 ? 'tablet' : 'phone')
-  const [l, setL] = useState<Layout>(get)
-  useEffect(() => {
-    const on = () => setL(get())
-    window.addEventListener('resize', on)
-    return () => window.removeEventListener('resize', on)
-  }, [])
-  return l
-}
+type Page = 'dashboard' | 'chat'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null)
   useEffect(() => { api('/api/me').then(r => setAuthed(r.logged_in)).catch(() => setAuthed(false)) }, [])
-  if (authed === null) return <div className="bg" />
+  if (authed === null) return null
   return authed ? <Agent onLogout={() => setAuthed(false)} /> : <Login onDone={() => setAuthed(true)} />
 }
 
@@ -33,28 +20,32 @@ function Login({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState('')
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    try { await api('/api/login', { json: { password: pw } }); onDone() } catch { setErr('Wrong password') }
+    try { await api('/api/login', { json: { password: pw } }); onDone() } catch { setErr('Incorrect password') }
   }
   return (
-    <div className="bg center">
-      <form className="login glass" onSubmit={submit}>
-        <h1 className="hero"><span className="dim">Welcome to</span> Inbox Agent.</h1>
-        <label htmlFor="pw">App password</label>
-        <input id="pw" type="password" value={pw} onChange={e => setPw(e.target.value)} autoFocus />
-        {err && <p className="err">{err}</p>}
-        <button type="submit" className="ask-cta static">Sign in</button>
-        <small className="muted">Set APP_PASSWORD in the project's .env file.</small>
+    <div className="login-page">
+      <form className="login" onSubmit={submit}>
+        <span className="app-icon" aria-hidden><Mail size={30} /></span>
+        <h1>Inbox Agent</h1>
+        <p>Enter your app password to continue.</p>
+        <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" aria-label="Password" autoFocus />
+        {err && <span className="err">{err}</span>}
+        <button type="submit" className="btn-primary">Continue</button>
       </form>
     </div>
   )
 }
 
+const TABS: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { id: 'chat', label: 'Chat', icon: MessageCircle },
+]
+
 function Agent({ onLogout }: { onLogout: () => void }) {
-  const layout = useLayout()
-  const [screen, setScreen] = useState<Screen>('home')
+  const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const askRef = useRef<AskHandle>(null)
+  const chatRef = useRef<ChatHandle>(null)
 
   const onError = useCallback((e: unknown) => {
     if (e instanceof AuthError) onLogout()
@@ -63,10 +54,15 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   const data = useAgentData(onLogout, onError)
   const chat = useChat(onError, data.load)
 
-  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 5000); return () => clearTimeout(t) } }, [toast])
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 4500); return () => clearTimeout(t) } }, [toast])
+  useEffect(() => { window.scrollTo(0, 0) }, [page])
 
-  const goAsk = (q?: string) => { if (layout === 'phone') setScreen('ask'); if (q) chat.ask(q) }
-  const draftReply = (text: string) => { if (layout === 'phone') setScreen('ask'); setTimeout(() => askRef.current?.prefill(text), 50) }
+  const ask = (q?: string, prefill = false) => {
+    setPage('chat')
+    if (!q) return
+    if (prefill) setTimeout(() => chatRef.current?.prefill(q), 60)
+    else chat.ask(q)
+  }
   const pushOn = async () => {
     if (!data.health?.vapid_public_key) return
     try { setToast(await enablePush(data.health.vapid_public_key)) } catch (e) { onError(e) }
@@ -75,37 +71,49 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
-      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'SUMMARY'].includes(el.tagName)) return
-      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); if (layout === 'phone') setScreen('ask'); chat.toggleVoice() }
-      if (e.key === '/') { e.preventDefault(); if (layout === 'phone') setScreen('ask'); setTimeout(() => (document.querySelector('[data-chat-input]') as HTMLInputElement)?.focus(), 50) }
+      if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'SUMMARY', 'A'].includes(el.tagName)) return
+      if (e.code === 'Space' && !e.repeat) { e.preventDefault(); setPage('chat'); chat.toggleVoice() }
+      if (e.key === '/') { e.preventDefault(); setPage('chat'); setTimeout(() => (document.querySelector('[data-chat-input]') as HTMLElement)?.focus(), 60) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [layout, chat.toggleVoice])
+  }, [chat.toggleVoice])
 
-  const home = <Home data={data} onAsk={goAsk} onOpenInsight={() => setScreen('insight')} onSettings={() => setSettingsOpen(true)}
-    onPush={pushOn} onDraftReply={draftReply} />
-  const ask = <Ask ref={askRef} chat={chat} onBack={layout === 'phone' ? () => setScreen('home') : undefined} />
-  const insight = <Insight insight={data.insight} onAsk={q => { if (layout !== 'desktop') setScreen(layout === 'phone' ? 'ask' : 'home'); chat.ask(q) }}
-    onBack={layout === 'desktop' ? undefined : () => setScreen('home')} onRefresh={() => data.loadInsight(true)} />
+  const urgent = data.stats?.metrics.urgent.value ?? 0
 
   return (
-    <div className={`bg layout-${layout}`}>
-      {layout === 'phone' && <main className="phone" key={screen}>{screen === 'home' ? home : screen === 'ask' ? ask : insight}</main>}
-      {layout === 'tablet' && (
-        <main className="columns two">
-          <section className="col">{home}</section>
-          <section className="col">{ask}</section>
-          {screen === 'insight' && <div className="overlay" onClick={e => e.target === e.currentTarget && setScreen('home')}><section className="col">{insight}</section></div>}
-        </main>
-      )}
-      {layout === 'desktop' && (
-        <main className="columns three">
-          <section className="col">{home}</section>
-          <section className="col">{ask}</section>
-          <section className="col">{insight}</section>
-        </main>
-      )}
+    <div className={`shell on-${page}`}>
+      <aside className="sidebar">
+        <div className="brand"><span className="app-icon sm" aria-hidden><Mail size={16} /></span>Inbox Agent</div>
+        <nav aria-label="Pages">
+          {TABS.map(t => (
+            <button key={t.id} className={`side-item ${page === t.id ? 'on' : ''}`} onClick={() => setPage(t.id)} aria-current={page === t.id ? 'page' : undefined}>
+              <t.icon size={18} aria-hidden />{t.label}
+              {t.id === 'dashboard' && urgent > 0 && <span className="badge">{urgent}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="side-foot">
+          <span className={`dot ${data.health?.gmail_connected && !data.offline ? 'ok' : 'bad'}`} />
+          <span>{data.health?.account ?? 'Connecting…'}</span>
+        </div>
+      </aside>
+
+      <main className="content">
+        {page === 'dashboard'
+          ? <Dashboard data={data} onAsk={ask} onSettings={() => setSettingsOpen(true)} onPush={pushOn} />
+          : <Chat ref={chatRef} chat={chat} />}
+      </main>
+
+      <nav className="tabbar" aria-label="Pages">
+        {TABS.map(t => (
+          <button key={t.id} className={page === t.id ? 'on' : ''} onClick={() => setPage(t.id)} aria-current={page === t.id ? 'page' : undefined}>
+            <span className="tab-icon"><t.icon size={22} aria-hidden />{t.id === 'dashboard' && urgent > 0 && <span className="badge">{urgent}</span>}</span>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
       {settingsOpen && <Settings onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
@@ -127,7 +135,7 @@ function Settings({ onClose, onErr, onLogout }: { onClose: () => void; onErr: (e
   }, [onErr])
 
   const save = async () => {
-    try { apply(await api('/api/settings', { method: 'PUT', json: { quiet_hours: quiet, vip_senders: vips.split(/[\n,]/) } })); onClose() }
+    try { await api('/api/settings', { method: 'PUT', json: { quiet_hours: quiet, vip_senders: vips.split(/[\n,]/) } }); onClose() }
     catch (e) { onErr(e) }
   }
   const delRule = async (id: number) => {
@@ -136,27 +144,52 @@ function Settings({ onClose, onErr, onLogout }: { onClose: () => void; onErr: (e
   const logout = async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
 
   return (
-    <div className="overlay sheet-wrap" role="dialog" aria-label="Settings" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="sheet glass">
-        <div className="sheet-head"><h2>Settings</h2><button className="round-btn" onClick={onClose} aria-label="Close"><X size={16} /></button></div>
-        <label>Quiet hours (HH:MM-HH:MM — security alerts still come through)
-          <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
-        </label>
-        <label>VIP senders (one email or domain per line)
-          <textarea rows={4} value={vips} onChange={e => setVips(e.target.value)} placeholder="boss@company.com" />
-        </label>
-        {!!s?.rules.length && <>
-          <h3 className="section-title">Rules learned from your feedback</h3>
-          <ul className="rules">{s.rules.map(r => (
-            <li key={r.id}><span>{r.action === 'always_alert' ? 'Always alert' : r.action === 'never_alert' ? 'Never alert' : r.action}: {r.pattern}</span>
-              <button className="link" onClick={() => delRule(r.id)}>Remove</button></li>
-          ))}</ul>
-        </>}
-        {usage && <p className="muted">Voice, last 30 days: {usage.voice_sessions_30d} sessions · {usage.voice_minutes_30d} min</p>}
-        <div className="sheet-actions">
-          <button className="ask-cta static" onClick={save}>Save</button>
-          <button className="pill" onClick={logout}>Sign out</button>
+    <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="grabber" aria-hidden />
+        <header className="sheet-bar">
+          <button className="text-btn" onClick={onClose}>Cancel</button>
+          <strong>Settings</strong>
+          <button className="text-btn bold" onClick={save}>Done</button>
+        </header>
+
+        <p className="group-label">Notifications</p>
+        <div className="group">
+          <label className="cell field">Quiet hours
+            <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
+          </label>
         </div>
+        <p className="group-note">Security alerts still come through during quiet hours.</p>
+
+        <p className="group-label">VIP senders</p>
+        <div className="group">
+          <textarea className="cell" rows={4} value={vips} onChange={e => setVips(e.target.value)} placeholder="One email or domain per line" aria-label="VIP senders" />
+        </div>
+
+        {!!s?.rules.length && <>
+          <p className="group-label">Learned rules</p>
+          <div className="group">
+            {s.rules.map(r => (
+              <div key={r.id} className="cell row-between">
+                <span>{r.action === 'always_alert' ? 'Always alert' : r.action === 'never_alert' ? 'Never alert' : r.action} · {r.pattern}</span>
+                <button className="text-btn destructive" onClick={() => delRule(r.id)}>Remove</button>
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {usage && <>
+          <p className="group-label">Voice usage (30 days)</p>
+          <div className="group">
+            <div className="cell row-between"><span>Sessions</span><span className="muted">{usage.voice_sessions_30d}</span></div>
+            <div className="cell row-between"><span>Minutes</span><span className="muted">{usage.voice_minutes_30d}</span></div>
+          </div>
+        </>}
+
+        <div className="group">
+          <button className="cell text-btn destructive center" onClick={logout}>Sign Out</button>
+        </div>
+        <button className="sheet-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
       </div>
     </div>
   )
