@@ -54,13 +54,7 @@ def _valid_cookie(value: str | None) -> bool:
     return hmac.compare_digest(sig, _sign(ts)) and ts.isdigit() and time.time() - int(ts) < SESSION_TTL
 
 
-@app.middleware("http")
-async def require_login(request: Request, call_next):
-    path = request.url.path
-    if path.startswith("/api/") and path not in ("/api/login", "/api/me"):
-        if not _valid_cookie(request.cookies.get(COOKIE)):
-            return JSONResponse({"detail": "login required"}, status_code=401)
-    return await call_next(request)
+# Password login disabled: the server binds to 127.0.0.1, so only this machine can reach it.
 
 
 class Login(BaseModel):
@@ -84,7 +78,7 @@ async def logout(response: Response):
 
 @app.get("/api/me")
 async def me(request: Request):
-    return {"logged_in": _valid_cookie(request.cookies.get(COOKIE)), "default_password": settings.app_password == "change-me"}
+    return {"logged_in": True, "default_password": False}
 
 
 # ---------- status & dashboard ----------

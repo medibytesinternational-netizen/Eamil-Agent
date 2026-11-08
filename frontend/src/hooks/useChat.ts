@@ -14,6 +14,7 @@ export function useChat(onError: (e: unknown) => void, onDataChanged: () => void
   const [busy, setBusy] = useState(false)
   const [toolChip, setToolChip] = useState<string | null>(null)
   const [voiceState, setVoiceState] = useState<VoiceState>('idle')
+  const [micStream, setMicStream] = useState<MediaStream | null>(null)
   const voice = useRef<VoiceSession | null>(null)
   const messagesRef = useRef(messages)
   messagesRef.current = messages
@@ -50,6 +51,7 @@ export function useChat(onError: (e: unknown) => void, onDataChanged: () => void
       onError: msg => onError(new Error(msg)),
       onEnded: () => { voice.current = null; setToolChip(null) },
       recentUserText,
+      onStream: setMicStream,
     })
     voice.current = v
     v.start(history())
@@ -57,5 +59,5 @@ export function useChat(onError: (e: unknown) => void, onDataChanged: () => void
 
   useEffect(() => () => voice.current?.stop(), [])
 
-  return { messages, busy, toolChip, voiceState, ask, toggleVoice, clear: () => setMessages([]) }
+  return { messages, busy, toolChip, voiceState, micStream, ask, toggleVoice, clear: () => setMessages([]) }
 }

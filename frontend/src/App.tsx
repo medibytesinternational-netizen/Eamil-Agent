@@ -1,4 +1,4 @@
-import { Bell, Bot, LayoutGrid, Mail, Settings as Cog, X } from 'lucide-react'
+import { Bell, Bot, LayoutGrid, Mail, Moon, Sun, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Avatar } from './components/ui'
 import { useAgentData } from './hooks/useAgentData'
@@ -37,16 +37,31 @@ function Login({ onDone }: { onDone: () => void }) {
   )
 }
 
-const DOCK: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
+
+const NAV: { id: Page; label: string; icon: typeof LayoutGrid }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
   { id: 'agent', label: 'Agent', icon: Bot },
 ]
+
+type Theme = 'light' | 'dark'
+function useTheme(): [Theme, () => void] {
+  const [theme, setTheme] = useState<Theme>(() => {
+    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') return t } catch { /* storage blocked */ }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#050706' : '#eceeec')
+    try { localStorage.setItem('theme', theme) } catch { /* ignore */ }
+  }, [theme])
+  return [theme, () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))]
+}
 
 function Agent({ onLogout }: { onLogout: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [theme, toggleTheme] = useTheme()
   const chatRef = useRef<ChatHandle>(null)
 
   const onError = useCallback((e: unknown) => {
@@ -85,53 +100,44 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   const display = name ? name[0].toUpperCase() + name.slice(1) : 'You'
   const urgent = data.stats?.metrics.urgent.value ?? 0
   const connected = !!data.health?.gmail_connected && !data.offline
+  const busy = chat.busy || chat.voiceState !== 'idle'
 
   return (
     <div className={`shell on-${page}`}>
-      <header className="dock">
-        <nav className="dock-nav" aria-label="Pages">
-          {DOCK.map(d => (
-            <button key={d.id} className={page === d.id ? 'on' : ''} onClick={() => setPage(d.id)} aria-current={page === d.id ? 'page' : undefined}>
-              <d.icon size={20} aria-hidden />
-              <span className="dock-label">{d.label}</span>
-              {d.id === 'dashboard' && urgent > 0 && <span className="count">{urgent}</span>}
+      <header className="pillnav-wrap">
+        <nav className="pillnav" aria-label="Main">
+          <div className="pn-group">
+            {NAV.map(n => (
+              <button key={n.id} className={`pn-tab ${page === n.id ? 'on' : ''}`} onClick={() => setPage(n.id)}
+                aria-current={page === n.id ? 'page' : undefined} title={n.label}>
+                <n.icon size={17} aria-hidden /><span className="pn-label">{n.label}</span>
+                {n.id === 'dashboard' && urgent > 0 && <span className="pn-count">{urgent}</span>}
+              </button>
+            ))}
+          </div>
+          <span className="pn-brand" title={busy ? 'Agent is working' : 'Agent is online'}>
+            <span className={`pn-dot ${busy ? 'busy' : connected ? 'ok' : 'bad'}`} aria-hidden />Inbox Agent
+          </span>
+          <div className="pn-group">
+            <a className="pn-icon" href="https://mail.google.com" target="_blank" rel="noreferrer" aria-label="Open Gmail" title="Open Gmail"><Mail size={17} /></a>
+            <button className="pn-icon" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title="Toggle theme">
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
             </button>
-          ))}
+            <button className="pn-profile" onClick={() => setSettingsOpen(true)} aria-label={`${display} — account and settings`} title={account}>
+              <Avatar name={display} size={30} /><span className={`presence ${connected ? 'ok' : 'bad'}`} />
+            </button>
+          </div>
         </nav>
-        <div className="dock-right">
-          <a className="icon-btn" href="https://mail.google.com" target="_blank" rel="noreferrer" aria-label="Open Gmail"><Mail size={18} /></a>
-          <button className="icon-btn" onClick={pushOn} aria-label="Turn on notifications">
-            <Bell size={18} />{urgent > 0 && <span className="dot-badge" />}
-          </button>
-          <button className="profile" onClick={() => setSettingsOpen(true)} aria-label="Account and settings">
-            <span className="avatar-wrap"><Avatar name={display} size={40} /><span className={`presence ${connected ? 'ok' : 'bad'}`} /></span>
-            <span className="profile-text"><strong>{display}</strong><small>{account}</small></span>
-          </button>
-        </div>
       </header>
 
       <main className="main">
         {page === 'dashboard'
           ? <Dashboard data={data} chat={chat} onAsk={ask} onSettings={() => setSettingsOpen(true)} />
-          : <Chat ref={chatRef} chat={chat} name={display} onMenu={() => setMenuOpen(true)} />}
+          : <Chat ref={chatRef} chat={chat} name={display} />}
       </main>
 
-      {menuOpen && (
-        <div className="sheet-backdrop menu-backdrop" role="dialog" aria-modal="true" aria-label="Menu" onClick={e => e.target === e.currentTarget && setMenuOpen(false)}>
-          <div className="menu-sheet">
-            <div className="menu-profile">
-              <span className="avatar-wrap"><Avatar name={display} size={44} /><span className={`presence ${connected ? 'ok' : 'bad'}`} /></span>
-              <span><strong>{display}</strong><small>{account}</small></span>
-            </div>
-            <button className="menu-item" onClick={() => { setMenuOpen(false); setPage('dashboard') }}><LayoutGrid size={18} /> Dashboard
-              {urgent > 0 && <span className="count">{urgent}</span>}</button>
-            <a className="menu-item" href="https://mail.google.com" target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}><Mail size={18} /> Open Gmail</a>
-            <button className="menu-item" onClick={() => { setMenuOpen(false); pushOn() }}><Bell size={18} /> Turn on notifications</button>
-            <button className="menu-item" onClick={() => { setMenuOpen(false); setSettingsOpen(true) }}><Cog size={18} /> Settings</button>
-          </div>
-        </div>
-      )}
-      {settingsOpen && <Settings onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}
+      {settingsOpen && <Settings account={account} display={display} onPush={pushOn}
+        onClose={() => { setSettingsOpen(false); data.load() }} onErr={onError} onLogout={onLogout} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   )
@@ -139,7 +145,9 @@ function Agent({ onLogout }: { onLogout: () => void }) {
 
 type SettingsData = { quiet_hours: string | null; vip_senders: string[]; rules: { id: number; pattern: string; action: string }[] }
 
-function Settings({ onClose, onErr, onLogout }: { onClose: () => void; onErr: (e: unknown) => void; onLogout: () => void }) {
+function Settings({ account, display, onPush, onClose, onErr, onLogout }: {
+  account: string; display: string; onPush: () => void; onClose: () => void; onErr: (e: unknown) => void; onLogout: () => void
+}) {
   const [s, setS] = useState<SettingsData | null>(null)
   const [quiet, setQuiet] = useState('')
   const [vips, setVips] = useState('')
@@ -167,6 +175,11 @@ function Settings({ onClose, onErr, onLogout }: { onClose: () => void; onErr: (e
           <h2>Settings</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
+        <div className="settings-profile">
+          <Avatar name={display} size={46} />
+          <span><strong>{display}</strong><small>{account}</small></span>
+        </div>
+        <button className="btn outline wide" onClick={onPush}><Bell size={16} /> Turn on notifications</button>
         <label className="field">Quiet hours
           <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
           <small>Security alerts still come through.</small>

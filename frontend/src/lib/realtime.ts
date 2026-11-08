@@ -11,6 +11,7 @@ export type VoiceCallbacks = {
   onError: (msg: string) => void
   onEnded: () => void
   recentUserText: () => string
+  onStream?: (s: MediaStream | null) => void
 }
 
 const IDLE_MS = 30_000
@@ -47,6 +48,7 @@ export class VoiceSession {
       this.pc.ontrack = e => { this.audio.srcObject = e.streams[0] }
       this.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
       this.mic.getTracks().forEach(t => this.pc!.addTrack(t, this.mic!))
+      this.cb.onStream?.(this.mic)
       this.dc = this.pc.createDataChannel('oai-events')
       this.dc.onmessage = e => this.onEvent(JSON.parse(e.data))
       this.dc.onopen = () => { this.started = Date.now(); this.cb.onState('listening'); this.bump() }
@@ -80,6 +82,7 @@ export class VoiceSession {
     this.ended = true
     window.clearTimeout(this.idleTimer)
     this.mic?.getTracks().forEach(t => t.stop())
+    this.cb.onStream?.(null)
     this.dc?.close()
     this.pc?.close()
     if (this.sessionId && this.started) {
