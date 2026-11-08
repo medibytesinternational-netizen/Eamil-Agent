@@ -21,6 +21,21 @@ def client() -> AsyncOpenAI:
     return _client
 
 
+GATEWAY_URL = "https://api.thesys.dev/v1/embed"
+_gateway: AsyncOpenAI | None = None
+
+
+def chat_client() -> tuple[AsyncOpenAI, bool]:
+    """Client for typed chat: the OpenUI AI Gateway when THESYS_API_KEY is set, else OpenAI directly.
+    Returns (client, via_gateway). Triage and voice always use OpenAI directly."""
+    global _gateway
+    if not settings.thesys_api_key:
+        return client(), False
+    if _gateway is None:
+        _gateway = AsyncOpenAI(api_key=settings.thesys_api_key, base_url=GATEWAY_URL)
+    return _gateway, True
+
+
 OTP_RE = re.compile(r"\b(otp|one[- ]time (pass(word|code)|code)|verification code|security code|login code)\b", re.I)
 SECURITY_RE = re.compile(
     r"\b(new sign[- ]in|password (was )?changed|suspicious (activity|sign)|security alert|unusual (activity|sign))\b", re.I

@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import logging
+
+from openai import APIError
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -15,6 +17,7 @@ from sqlalchemy import func, select
 from sse_starlette.sse import EventSourceResponse
 
 from . import poller
+from .openui import chat_instructions, reply_format
 from .alerts import in_quiet_hours, send_push
 from .config import ROOT, settings
 from .db import SessionLocal, init_db
@@ -22,10 +25,12 @@ from .events import publish, stream
 from .google_auth import ReconnectRequired
 from .models import Alert, Draft, Email, PushSubscription, Rule, User, VoiceSession
 from .tools import chat_tools, dumps, instructions, realtime_tools, run_tool
-from .triage import client as openai_client
+from .triage import chat_client, client as openai_client
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("agent.chat")
 CHAT_MODEL = "gpt-5.4-mini"
+GATEWAY_CHAT_MODEL = "openai/gpt-5.4-mini"  # gateway ids are {author}/{model}
 COOKIE = "agent_session"
 SESSION_TTL = 30 * 24 * 3600
 
@@ -301,25 +306,38 @@ class ChatIn(BaseModel):
 @app.post("/api/chat")
 async def chat(body: ChatIn):
     history = [
-        {"role": "assistant" if h.get("role") in ("agent", "assistant") else "user", "content": str(h.get("text", ""))[:2000]}
+        {"role": "assistant" if h.get("role") in ("agent", "assistant") else "user", "content": str(h.get("text", ""))[:4000]}
         for h in body.history[-12:] if h.get("text")
     ]
     inputs: list = [*history, {"role": "user", "content": body.message}]
     user_text = " ".join(h["content"] for h in history if h["role"] == "user")[-3000:] + " " + body.message
     used: list[str] = []
+    llm, via_gateway = chat_client()
+    model = GATEWAY_CHAT_MODEL if via_gateway else CHAT_MODEL
     for _ in range(6):
-        r = await openai_client().responses.create(
-            model=CHAT_MODEL, instructions=instructions(), input=inputs, tools=chat_tools(),
-        )
+        try:
+            r = await llm.responses.create(
+                model=model, instructions=chat_instructions(instructions()), input=inputs, tools=chat_tools(),
+            )
+        except APIError as e:
+            if not via_gateway:
+                raise
+            # Gateway unavailable (e.g. no balance): fall back to OpenAI directly for the rest of this chat.
+            log.warning("gateway failed (%s); falling back to OpenAI", getattr(e, "status_code", type(e).__name__))
+            llm, via_gateway, model = openai_client(), False, CHAT_MODEL
+            r = await llm.responses.create(
+                model=model, instructions=chat_instructions(instructions()), input=inputs, tools=chat_tools(),
+            )
+        log.info("chat turn via %s model=%s response=%s", "gateway" if via_gateway else "openai", model, r.id)
         calls = [o for o in r.output if o.type == "function_call"]
         if not calls:
-            return {"reply": r.output_text, "tools": used}
+            return {"reply": r.output_text, "tools": used, "format": reply_format(r.output_text)}
         inputs += [o.model_dump(exclude_none=True) for o in r.output if o.type in ("function_call", "reasoning")]
         for c in calls:
             used.append(c.name)
             result = await tool(c.name, ToolCall(arguments=c.arguments, user_text=user_text))
             inputs.append({"type": "function_call_output", "call_id": c.call_id, "output": dumps(result)})
-    return {"reply": "Sorry, that took too many steps. Could you rephrase?", "tools": used}
+    return {"reply": "Sorry, that took too many steps. Could you rephrase?", "tools": used, "format": "text"}
 
 
 class SessionIn(BaseModel):

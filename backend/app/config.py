@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
 
     openai_api_key: str = ""
+    thesys_api_key: str = ""  # OpenUI AI Gateway, used for typed chat when set
     gmail_account: str
     google_client_secret_file: str = "../secrets/client_secret.json"
     database_url: str = "sqlite+aiosqlite:///./agent.db"

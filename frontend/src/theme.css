@@ -118,3 +118,5 @@ html, body { background: var(--bg); color: var(--text); transition: background .
   .ai-top { padding: 10px 14px 6px; grid-template-columns: 42px 1fr 42px; }
 }
 [data-theme="light"] .ai-card .msg.agent .bubble { background: none; border: 0; box-shadow: none; }
+[data-theme="light"] .ai-card .oui-card, [data-theme="light"] .ai-card .oui-stat { background: #fff; border-color: #e3e9e4; }
+[data-theme="light"] .ai-card .oui-tag { color: var(--g-700); }

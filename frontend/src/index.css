@@ -508,3 +508,28 @@ button.list-title:hover { color: var(--g-700); }
 .ai-card .msg-avatar { flex: 0 0 34px; width: 34px; height: 34px; display: grid; place-items: center; }
 .ai-card .msg.agent .bubble { background: none; border: 0; box-shadow: none; padding: 5px 0 0; border-radius: 0; max-width: min(86%, 640px); }
 @media (max-width: 640px) { .ai-card .msg.agent .msg-avatar { display: grid; } }
+
+/* OpenUI generative answers in Agent chat */
+.oui-msg { display: grid; gap: 10px; white-space: normal; }
+.oui-reply { display: grid; gap: 10px; }
+.oui-text { margin: 0; white-space: pre-wrap; }
+.oui-list { display: grid; gap: 8px; }
+.oui-title { margin: 2px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ai-muted, var(--muted)); }
+.oui-card { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; background: var(--ai-glass, var(--surface-3)); border: 1px solid var(--ai-line, transparent); }
+.oui-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.oui-from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.oui-date { margin-left: auto; font-size: 12px; color: var(--ai-muted, var(--muted)); white-space: nowrap; }
+.oui-amount { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.oui-tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(57, 211, 83, .14); color: var(--neon, var(--g-600)); white-space: nowrap; justify-self: start; }
+.oui-subject { font-weight: 500; }
+.oui-summary, .oui-meta { font-size: 13.5px; color: var(--ai-muted, var(--muted)); }
+.oui-body { font-size: 14px; white-space: pre-wrap; padding-top: 4px; border-top: 1px solid var(--ai-line, rgba(0,0,0,.08)); margin-top: 4px; }
+.oui-open { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; border: 0; background: transparent; color: var(--ai-muted, var(--muted)); cursor: pointer; }
+.oui-open:hover, .oui-open:focus-visible { background: rgba(57, 211, 83, .14); color: var(--neon, var(--g-600)); }
+.oui-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.oui-stat { display: grid; padding: 10px 12px; border-radius: 12px; background: var(--ai-glass, var(--surface-3)); border: 1px solid var(--ai-line, transparent); }
+.oui-stat-v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.oui-stat-l { font-size: 12px; color: var(--ai-muted, var(--muted)); }
+.oui-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.oui-action { padding: 7px 14px; border-radius: 999px; border: 1px solid rgba(57, 211, 83, .45); background: transparent; color: inherit; font: inherit; font-size: 13.5px; cursor: pointer; }
+.oui-action:hover, .oui-action:focus-visible { background: rgba(57, 211, 83, .14); }

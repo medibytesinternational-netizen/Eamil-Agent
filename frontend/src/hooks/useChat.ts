@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { VoiceSession, type VoiceState } from '../lib/realtime'
 
-export type Msg = { role: 'user' | 'agent'; text: string; pending?: boolean }
+export type Msg = { role: 'user' | 'agent'; text: string; pending?: boolean; format?: 'openui' | 'text' }
 
 export const TOOL_LABEL: Record<string, string> = {
   search_emails: 'Searching Gmail…', read_thread: 'Reading the email…', get_urgent_items: 'Checking urgent items…',
@@ -28,8 +28,8 @@ export function useChat(onError: (e: unknown) => void, onDataChanged: () => void
     setBusy(true)
     setToolChip('Thinking…')
     try {
-      const r = await api<{ reply: string; tools: string[] }>('/api/chat', { json: { message: text, history: history() } })
-      setMessages(m => [...m, { role: 'agent', text: r.reply }])
+      const r = await api<{ reply: string; tools: string[]; format?: 'openui' | 'text' }>('/api/chat', { json: { message: text, history: history() } })
+      setMessages(m => [...m, { role: 'agent', text: r.reply, format: r.format }])
       if (r.tools.length) onDataChanged()
     } catch (e) {
       onError(e)

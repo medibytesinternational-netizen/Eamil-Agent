@@ -1,0 +1,338 @@
+{
+  "root": "Reply",
+  "components": {
+    "Reply": {
+      "signature": "Reply(children: (Text | EmailList | BillList | DraftPreview | StatRow | Actions)[])",
+      "description": "Root of every UI answer."
+    },
+    "Text": {
+      "signature": "Text(text: string)",
+      "description": "A short paragraph of plain prose."
+    },
+    "EmailList": {
+      "signature": "EmailList(title?: string, items: EmailCard[])",
+      "description": "A list of emails, e.g. search results or threads waiting on a reply."
+    },
+    "EmailCard": {
+      "signature": "EmailCard(from: string, subject: string, date: string, summary: string, threadId: string, tag?: string)",
+      "description": "One email or thread."
+    },
+    "BillList": {
+      "signature": "BillList(title?: string, items: Bill[])",
+      "description": "Bills or payments that are due."
+    },
+    "Bill": {
+      "signature": "Bill(payee: string, amount: string, currency: string, due: string, threadId: string)",
+      "description": "One bill or payment due."
+    },
+    "DraftPreview": {
+      "signature": "DraftPreview(to: string, subject: string, body: string)",
+      "description": "A reply draft that was saved to Gmail Drafts. Use only after create_draft succeeded."
+    },
+    "StatRow": {
+      "signature": "StatRow(items: Stat[])",
+      "description": "A row of quick counts."
+    },
+    "Stat": {
+      "signature": "Stat(label: string, value: string)",
+      "description": "One labelled count."
+    },
+    "Actions": {
+      "signature": "Actions(items: ActionButton[])",
+      "description": "A row of follow-up buttons (at most 3)."
+    },
+    "ActionButton": {
+      "signature": "ActionButton(label: string, prompt: string)",
+      "description": "A follow-up suggestion. Clicking sends `prompt` as the user's next message."
+    }
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "Reply": {
+        "$ref": "#/$defs/Reply"
+      },
+      "Text": {
+        "$ref": "#/$defs/Text"
+      },
+      "EmailList": {
+        "$ref": "#/$defs/EmailList"
+      },
+      "EmailCard": {
+        "$ref": "#/$defs/EmailCard"
+      },
+      "BillList": {
+        "$ref": "#/$defs/BillList"
+      },
+      "Bill": {
+        "$ref": "#/$defs/Bill"
+      },
+      "DraftPreview": {
+        "$ref": "#/$defs/DraftPreview"
+      },
+      "StatRow": {
+        "$ref": "#/$defs/StatRow"
+      },
+      "Stat": {
+        "$ref": "#/$defs/Stat"
+      },
+      "Actions": {
+        "$ref": "#/$defs/Actions"
+      },
+      "ActionButton": {
+        "$ref": "#/$defs/ActionButton"
+      }
+    },
+    "required": [
+      "Reply",
+      "Text",
+      "EmailList",
+      "EmailCard",
+      "BillList",
+      "Bill",
+      "DraftPreview",
+      "StatRow",
+      "Stat",
+      "Actions",
+      "ActionButton"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+      "Reply": {
+        "type": "object",
+        "properties": {
+          "children": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Text"
+                },
+                {
+                  "$ref": "#/$defs/EmailList"
+                },
+                {
+                  "$ref": "#/$defs/BillList"
+                },
+                {
+                  "$ref": "#/$defs/DraftPreview"
+                },
+                {
+                  "$ref": "#/$defs/StatRow"
+                },
+                {
+                  "$ref": "#/$defs/Actions"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "children"
+        ],
+        "additionalProperties": false,
+        "description": "Root of every UI answer."
+      },
+      "Text": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "description": "A short paragraph of plain prose."
+      },
+      "EmailList": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/EmailCard"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "A list of emails, e.g. search results or threads waiting on a reply."
+      },
+      "EmailCard": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "subject",
+          "date",
+          "summary",
+          "threadId"
+        ],
+        "additionalProperties": false,
+        "description": "One email or thread."
+      },
+      "BillList": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Bill"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "Bills or payments that are due."
+      },
+      "Bill": {
+        "type": "object",
+        "properties": {
+          "payee": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "due": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "payee",
+          "amount",
+          "currency",
+          "due",
+          "threadId"
+        ],
+        "additionalProperties": false,
+        "description": "One bill or payment due."
+      },
+      "DraftPreview": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "additionalProperties": false,
+        "description": "A reply draft that was saved to Gmail Drafts. Use only after create_draft succeeded."
+      },
+      "StatRow": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Stat"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "A row of quick counts."
+      },
+      "Stat": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "additionalProperties": false,
+        "description": "One labelled count."
+      },
+      "Actions": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ActionButton"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false,
+        "description": "A row of follow-up buttons (at most 3)."
+      },
+      "ActionButton": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "prompt"
+        ],
+        "additionalProperties": false,
+        "description": "A follow-up suggestion. Clicking sends `prompt` as the user's next message."
+      }
+    }
+  }
+}

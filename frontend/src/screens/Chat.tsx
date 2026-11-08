@@ -4,6 +4,7 @@ import { VoiceBeam } from 'voice-glow'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { VoiceButton, voiceLabel } from '../components/ui'
 import type { useChat } from '../hooks/useChat'
+import { AgentMessage } from '../components/AgentMessage'
 
 const CHIPS: { label: string; icon: typeof Sparkles; text: string; prefill?: boolean }[] = [
   { label: 'Urgent today', icon: AlertTriangle, text: 'Anything urgent today?' },
@@ -14,11 +15,6 @@ const CHIPS: { label: string; icon: typeof Sparkles; text: string; prefill?: boo
 
 export type ChatHandle = { prefill: (text: string) => void }
 
-// **bold** and "- " bullets only; React escapes everything else.
-function Rich({ text }: { text: string }) {
-  const parts = text.replace(/^\s*[-*] /gm, '• ').split(/(\*\*[^*]+\*\*)/g)
-  return <>{parts.map((p, i) => p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p)}</>
-}
 
 
 export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat>; name: string }>(
@@ -70,7 +66,7 @@ export const Chat = forwardRef<ChatHandle, { chat: ReturnType<typeof useChat>; n
                 {messages.map((m, i) => (
                   <div key={i} className={`msg ${m.role} ${m.pending ? 'pending' : ''}`}>
                     {m.role === 'agent' && <span className="msg-avatar" aria-hidden><BotAvatar type="flower" size={34} /></span>}
-                    <div className="bubble">{m.role === 'agent' ? <Rich text={m.text} /> : m.text}</div>
+                    <div className="bubble">{m.role === 'agent' ? <AgentMessage text={m.text} format={m.format} onAsk={ask} /> : m.text}</div>
                   </div>
                 ))}
                 {toolChip && (
