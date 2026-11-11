@@ -1,19 +1,35 @@
 import { Bell, Bot, LayoutGrid, Mail, Moon, Sun, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AccountSection } from './components/AccountSection'
 import { Avatar } from './components/ui'
 import { useAgentData } from './hooks/useAgentData'
 import { useChat } from './hooks/useChat'
 import { api, AuthError, enablePush } from './lib/api'
 import { Chat, type ChatHandle } from './screens/Chat'
 import { Dashboard } from './screens/Dashboard'
+import { Onboarding, type Profile } from './screens/Onboarding'
 
 type Page = 'dashboard' | 'agent'
 
+type Me = {
+  logged_in: boolean; login_required?: boolean; onboarded: boolean; connected?: boolean
+  profile: Profile | null; account?: string | null; oauth_mode?: 'web' | 'desktop'
+}
+
 export default function App() {
-  const [authed, setAuthed] = useState<boolean | null>(null)
-  useEffect(() => { api('/api/me').then(r => setAuthed(r.logged_in)).catch(() => setAuthed(false)) }, [])
-  if (authed === null) return null
-  return authed ? <Agent onLogout={() => setAuthed(false)} /> : <Login onDone={() => setAuthed(true)} />
+  const [me, setMe] = useState<Me | null>(null)
+  const [failed, setFailed] = useState(false)
+  const load = useCallback(() => api<Me>('/api/me').then(setMe).catch(() => setFailed(true)), [])
+  useEffect(() => { load() }, [load])
+  if (failed) return <div className="ob-page"><div className="ob-card card ob-body"><h1>Can't reach the agent</h1><p className="muted">Start the backend, then refresh this page.</p></div></div>
+  if (!me) return null
+  if (!me.logged_in) return <Login onDone={load} />
+  // Not set up yet, or an account whose Gmail access was disconnected → the wizard (it skips what's done).
+  if (!me.onboarded || !me.connected) {
+    return <Onboarding initial={me.profile} oauthMode={me.oauth_mode ?? 'desktop'} resumeConnect={me.onboarded && !me.connected}
+      onDone={p => setMe({ ...me, onboarded: true, connected: true, profile: p })} />
+  }
+  return <Agent agentName={me.profile?.agent_name || 'Inbox Agent'} onLogout={() => setMe({ ...me, onboarded: false })} />
 }
 
 function Login({ onDone }: { onDone: () => void }) {
@@ -21,13 +37,13 @@ function Login({ onDone }: { onDone: () => void }) {
   const [err, setErr] = useState('')
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    try { await api('/api/login', { json: { password: pw } }); onDone() } catch { setErr('Incorrect password') }
+    try { await api('/api/login', { json: { password: pw } }); onDone() } catch (x) { setErr(x instanceof Error ? x.message : 'Incorrect password') }
   }
   return (
     <div className="login-page">
       <form className="card login" onSubmit={submit}>
         <span className="logo" aria-hidden><Mail size={26} /></span>
-        <h1>Inbox Agent</h1>
+        <h1>Welcome back</h1>
         <p>Enter your app password to continue.</p>
         <input type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Password" aria-label="Password" autoFocus />
         {err && <span className="err">{err}</span>}
@@ -57,7 +73,7 @@ function useTheme(): [Theme, () => void] {
   return [theme, () => setTheme(t => (t === 'dark' ? 'light' : 'dark'))]
 }
 
-function Agent({ onLogout }: { onLogout: () => void }) {
+function Agent({ agentName, onLogout }: { agentName: string; onLogout: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [toast, setToast] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -96,7 +112,7 @@ function Agent({ onLogout }: { onLogout: () => void }) {
   }, [chat.toggleVoice])
 
   const account = data.health?.account ?? ''
-  const name = account.split('@')[0].replace(/[0-9._]+/g, ' ').trim()
+  const name = data.health?.user_name || account.split('@')[0].replace(/[0-9._]+/g, ' ').trim()
   const display = name ? name[0].toUpperCase() + name.slice(1) : 'You'
   const urgent = data.stats?.metrics.urgent.value ?? 0
   const connected = !!data.health?.gmail_connected && !data.offline
@@ -116,7 +132,7 @@ function Agent({ onLogout }: { onLogout: () => void }) {
             ))}
           </div>
           <span className="pn-brand" title={busy ? 'Agent is working' : 'Agent is online'}>
-            <span className={`pn-dot ${busy ? 'busy' : connected ? 'ok' : 'bad'}`} aria-hidden />Inbox Agent
+            <span className={`pn-dot ${busy ? 'busy' : connected ? 'ok' : 'bad'}`} aria-hidden />{agentName}
           </span>
           <div className="pn-group">
             <a className="pn-icon" href="https://mail.google.com" target="_blank" rel="noreferrer" aria-label="Open Gmail" title="Open Gmail"><Mail size={17} /></a>
@@ -166,7 +182,6 @@ function Settings({ account, display, onPush, onClose, onErr, onLogout }: {
   const delRule = async (id: number) => {
     try { await api(`/api/rules/${id}`, { method: 'DELETE' }); apply(await api('/api/settings')) } catch (e) { onErr(e) }
   }
-  const logout = async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); onLogout() }
 
   return (
     <div className="sheet-backdrop" role="dialog" aria-modal="true" aria-label="Settings" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -179,6 +194,7 @@ function Settings({ account, display, onPush, onClose, onErr, onLogout }: {
           <Avatar name={display} size={46} />
           <span><strong>{display}</strong><small>{account}</small></span>
         </div>
+        <AccountSection onErr={onErr} />
         <button className="btn outline wide" onClick={onPush}><Bell size={16} /> Turn on notifications</button>
         <label className="field">Quiet hours
           <input value={quiet} onChange={e => setQuiet(e.target.value)} placeholder="23:00-07:00" />
@@ -198,7 +214,7 @@ function Settings({ account, display, onPush, onClose, onErr, onLogout }: {
         {usage && <p className="muted">Voice, last 30 days: {usage.voice_sessions_30d} sessions · {usage.voice_minutes_30d} min</p>}
         <div className="sheet-actions">
           <button className="btn primary" onClick={save}>Save</button>
-          <button className="btn outline" onClick={logout}>Sign out</button>
+          <button className="btn outline" onClick={onLogout}>Edit agent & rules</button>
         </div>
       </div>
     </div>

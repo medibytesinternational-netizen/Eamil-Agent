@@ -120,3 +120,8 @@ html, body { background: var(--bg); color: var(--text); transition: background .
 [data-theme="light"] .ai-card .msg.agent .bubble { background: none; border: 0; box-shadow: none; }
 [data-theme="light"] .ai-card .oui-card, [data-theme="light"] .ai-card .oui-stat { background: #fff; border-color: #e3e9e4; }
 [data-theme="light"] .ai-card .oui-tag { color: var(--g-700); }
+[data-theme="dark"] .ob-badge.urgent, [data-theme="dark"] .ob-err { background: rgba(240, 68, 56, .16); color: #fda29b; }
+[data-theme="dark"] .ob-badge.important { background: rgba(59, 130, 246, .18); color: #93b4fd; }
+[data-theme="dark"] .ob-steps li.done .ob-dot, [data-theme="dark"] .ob-ok { color: #7ee08f; }
+[data-theme="dark"] .status.blue { color: #93b4fd; border-color: rgba(59,130,246,.35); background: rgba(59,130,246,.1); }
+[data-theme="dark"] .ob-warn { background: rgba(245, 158, 11, .14); color: #fcd28a; }

@@ -65,6 +65,7 @@ export function Dashboard({ data, chat, onAsk, onSettings }: {
   const people = [
     ...(dash?.urgent ?? []).map(u => ({ key: `u${u.id}`, sender: u.sender, text: u.summary, status: 'Urgent', tone: 'red', thread: u.thread_id })),
     ...(dash?.needs_reply ?? []).map(r => ({ key: `r${r.thread_id}`, sender: r.sender, text: r.summary, status: 'Needs reply', tone: 'amber', thread: r.thread_id })),
+    ...(dash?.important ?? []).map(r => ({ key: `i${r.thread_id}`, sender: r.sender, text: r.summary, status: 'Important', tone: 'blue', thread: r.thread_id })),
     ...(dash?.drafts ?? []).map(d => ({ key: `d${d.draft_id}`, sender: d.to ?? 'Draft', text: d.subject, status: 'Draft', tone: 'green', thread: d.thread_id ?? '' })),
   ].slice(0, 5)
 

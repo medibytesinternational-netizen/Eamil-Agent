@@ -8,11 +8,11 @@ export type Urgent = {
 export type Reply = { thread_id: string; sender: string; summary: string | null; received_at: string }
 export type DraftItem = { draft_id: string; thread_id: string | null; to: string | null; subject: string | null; snippet: string | null }
 export type Dashboard = {
-  counts: { urgent: number; needs_reply: number; drafts: number; processed_today: number; total: number }
-  urgent: Urgent[]; needs_reply: Reply[]; drafts: DraftItem[]
+  counts: { urgent: number; needs_reply: number; important?: number; drafts: number; processed_today: number; total: number }
+  urgent: Urgent[]; needs_reply: Reply[]; important?: Reply[]; drafts: DraftItem[]
 }
 export type Health = {
-  gmail_connected: boolean; account: string; quiet_hours: string | null; quiet_now: boolean
+  gmail_connected: boolean; account: string; agent_name?: string; user_name?: string; quiet_hours: string | null; quiet_now: boolean
   backfill: { done: number; total: number } | null; last_error: string | null; vapid_public_key: string
 }
 export type Metric = { value: number; change: number | null }

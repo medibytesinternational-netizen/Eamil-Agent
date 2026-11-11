@@ -9,7 +9,11 @@ export async function api<T = any>(path: string, init?: RequestInit & { json?: u
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   })
   if (r.status === 401) throw new AuthError()
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `Request failed (${r.status})`)
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => ({}))).detail
+    const msg = Array.isArray(detail) ? String(detail[0]?.msg ?? '').replace(/^Value error, /, '') : detail
+    throw new Error(msg || `Request failed (${r.status})`)
+  }
   return r.json()
 }
 

@@ -11,9 +11,20 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     thesys_api_key: str = ""  # OpenUI AI Gateway, used for typed chat when set
-    gmail_account: str
+    gmail_account: str = ""  # optional; the owner connects Gmail during onboarding
     google_client_secret_file: str = "../secrets/client_secret.json"
-    database_url: str = "sqlite+aiosqlite:///./agent.db"
+    database_url: str = "sqlite+aiosqlite:///./agent.db"  # legacy single-file DB (imported once)
+    data_dir: str = "data"
+    # Web OAuth (hosted, e.g. Railway). When set, Gmail connects via redirect instead of the desktop flow.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    public_url: str = ""  # e.g. https://your-app.up.railway.app
+    require_login: bool = False  # forced on when hosted (RAILWAY_ENVIRONMENT is set)
+    railway_environment: str = ""
+
+    @property
+    def login_required(self) -> bool:
+        return self.require_login or bool(self.railway_environment)
     realtime_model: str = "gpt-realtime-2.1-mini"
     timezone: str = "Asia/Kolkata"
     quiet_hours: str = "23:00-07:00"
@@ -26,6 +37,12 @@ class Settings(BaseSettings):
     @property
     def client_secret_path(self) -> Path:
         return (BACKEND / self.google_client_secret_file).resolve()
+
+    @property
+    def data_path(self) -> Path:
+        """Where the per-account SQLite files live. On Railway, point DATA_DIR at a mounted Volume."""
+        p = Path(self.data_dir)
+        return p if p.is_absolute() else (BACKEND / p).resolve()
 
     @property
     def db_url(self) -> str:

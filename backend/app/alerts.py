@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from pywebpush import WebPushException, webpush
 from sqlalchemy import delete, select
 
+from .profile import cached_names
 from .config import settings
 from .db import SessionLocal
 from .events import publish
@@ -50,7 +51,7 @@ async def maybe_alert(email: Email, quiet_hours: str | None) -> Alert | None:
         alert_id = alert.id
     publish("alert", {"id": alert_id})
     if not quiet:
-        await send_push({"title": "Inbox Agent", "body": format_alert(email),
+        await send_push({"title": cached_names()[0], "body": format_alert(email),
                          "url": f"https://mail.google.com/mail/u/0/#inbox/{email.thread_id}"})
     return alert
 

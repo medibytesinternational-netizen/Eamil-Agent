@@ -9,25 +9,25 @@ from sqlalchemy import select
 
 from . import gmail_client as gmail
 from .alerts import maybe_alert
-from .config import settings
 from .db import SessionLocal
 from .events import publish
 from .google_auth import ReconnectRequired
-from .models import Draft, Email, Rule, User
+from .models import Draft, Email, Profile, Rule, User
+from .profile import get_user, load_profile
 from .triage import triage
 
 log = logging.getLogger(__name__)
-BACKFILL_QUERY = "in:inbox newer_than:7d"
-BACKFILL_LIMIT = 150
+BACKFILL_QUERY = "in:inbox newer_than:14d"  # two weeks of prior context on first connect
+BACKFILL_LIMIT = 300
 
 _lock = asyncio.Lock()
 _sem = asyncio.Semaphore(4)
-state = {"backfill": None, "last_poll": None, "last_error": None}
+state = {"backfill": None, "last_poll": None, "last_error": None, "recheck": None}
 
 
 async def _user() -> User | None:
     async with SessionLocal() as s:
-        return (await s.execute(select(User).where(User.email == settings.gmail_account))).scalar_one_or_none()
+        return await get_user(s)
 
 
 async def _rules() -> list[tuple[str, str]]:
@@ -42,7 +42,8 @@ async def _known(ids: list[str]) -> set[str]:
         return set((await s.execute(select(Email.gmail_id).where(Email.gmail_id.in_(ids)))).scalars())
 
 
-async def process_message(message_id: str, user: User, rules: list[tuple[str, str]], alert: bool = True) -> bool:
+async def process_message(message_id: str, user: User, rules: list[tuple[str, str]], alert: bool = True,
+                          profile: Profile | None = None) -> bool:
     """Fetch, triage, store and maybe alert. Returns True if newly processed. Idempotent."""
     async with _sem:
         if await _known([message_id]):
@@ -50,13 +51,13 @@ async def process_message(message_id: str, user: User, rules: list[tuple[str, st
         msg = await gmail.get_message(message_id)
         if "INBOX" not in msg["label_ids"]:
             return False
-        result = await triage(msg, user.vip_senders or [], rules)
+        result = await triage(msg, user.vip_senders or [], rules, profile)
         received = msg["received_at"] or datetime.fromtimestamp(msg["internal_ms"] / 1000, timezone.utc)
         email = Email(
             gmail_id=msg["id"], thread_id=msg["thread_id"], sender=msg["from"], to=msg["to"],
             subject=msg["subject"], received_at=received, category=result["category"], urgency=result["urgency"],
             summary=result["summary"], needs_reply=result["needs_reply"], due_date=result["due_date"],
-            amount=result["amount"], reason=result["reason"],
+            amount=result["amount"], reason=result["reason"], important=result.get("important", False),
         )
         async with SessionLocal() as s:
             if await s.get(Email, email.gmail_id):
@@ -70,8 +71,9 @@ async def process_message(message_id: str, user: User, rules: list[tuple[str, st
 
 
 async def _process_many(ids: list[str], user: User, alert: bool = True) -> int:
-    rules = await _rules()
-    results = await asyncio.gather(*(process_message(i, user, rules, alert) for i in ids), return_exceptions=True)
+    rules, profile = await _rules(), await load_profile()
+    results = await asyncio.gather(*(process_message(i, user, rules, alert, profile) for i in ids),
+                                   return_exceptions=True)
     for r in results:
         if isinstance(r, Exception) and not isinstance(r, ReconnectRequired):
             log.exception("processing failed", exc_info=r)
@@ -111,7 +113,7 @@ async def poll_once() -> int:
 
 async def _save_history(history_id: str) -> None:
     async with SessionLocal() as s:
-        user = (await s.execute(select(User).where(User.email == settings.gmail_account))).scalar_one()
+        user = await get_user(s)
         user.last_history_id = str(history_id)
         await s.commit()
 
@@ -130,12 +132,41 @@ async def fallback_poll() -> int:
         return 0
 
 
-async def backfill() -> None:
+_backfill_running = False
+
+
+def reset_state() -> None:
+    """Forget per-account runtime state (the active account changed)."""
+    state.update(backfill=None, last_poll=None, last_error=None, recheck=None)
+
+
+def _window(days: int) -> str:
+    return f"in:inbox newer_than:{max(1, min(int(days), 14))}d"
+
+
+async def estimate(days: int = 14) -> dict:
+    """Cheap count (Gmail list calls only, no AI): total mail vs. mail likely to need an AI read.
+    Promotions / social / forums / updates are mostly settled by the free rules."""
+    q = _window(days)
+    total = await gmail.list_message_ids(q, limit=BACKFILL_LIMIT)
+    known = await _known(total)
+    personal = await gmail.list_message_ids(
+        q + " -category:promotions -category:social -category:forums -category:updates", limit=BACKFILL_LIMIT)
+    return {"days": days, "total": len([i for i in total if i not in known]),
+            "ai_review": len([i for i in personal if i not in known]), "limit": BACKFILL_LIMIT}
+
+
+async def backfill(days: int = 14) -> None:
+    global _backfill_running
     user = await _user()
-    if not user:
+    if not user or _backfill_running:
         return
+    _backfill_running = True
     try:
-        ids = await gmail.list_message_ids(BACKFILL_QUERY, limit=BACKFILL_LIMIT)
+        q = _window(days)
+        ids = await gmail.list_message_ids(q, limit=BACKFILL_LIMIT)
+        unread = set(await gmail.list_message_ids(q + " is:unread", limit=BACKFILL_LIMIT))
+        ids = [i for i in ids if i in unread] + [i for i in ids if i not in unread]  # most useful first
         todo = [i for i in ids if i not in await _known(ids)]
         state["backfill"] = {"done": 0, "total": len(todo)}
         publish("backfill", state["backfill"])
@@ -150,6 +181,9 @@ async def backfill() -> None:
     except Exception:
         log.exception("backfill failed")
         state["backfill"] = None
+        publish("backfill", {"failed": True})
+    finally:
+        _backfill_running = False
 
 
 async def _alert_backfilled(ids: list[str], user: User) -> None:
@@ -163,6 +197,60 @@ async def _alert_backfilled(ids: list[str], user: User) -> None:
         await s.commit()
     if emails:
         publish("alert", {})
+
+
+_recheck_running = False
+
+
+async def recheck(days: int = 14) -> None:
+    """Re-classify mail already stored from the last `days` days with the CURRENT rules.
+    Updates labels; removes only unread alerts that no longer qualify (never handled/dismissed ones)."""
+    global _recheck_running
+    from datetime import timedelta
+
+    from .models import Alert
+
+    user = await _user()
+    if not user or _recheck_running:
+        return
+    _recheck_running = True
+    try:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        async with SessionLocal() as s:
+            ids = list((await s.execute(select(Email.gmail_id).where(Email.received_at >= since)
+                                        .order_by(Email.received_at.desc()).limit(BACKFILL_LIMIT))).scalars())
+        rules, profile = await _rules(), await load_profile()
+        state["recheck"] = {"done": 0, "total": len(ids)}
+        publish("recheck", state["recheck"])
+        for n, gid in enumerate(ids, 1):
+            try:
+                async with _sem:
+                    msg = await gmail.get_message(gid)
+                    r = await triage(msg, user.vip_senders or [], rules, profile)
+                async with SessionLocal() as s:
+                    e = await s.get(Email, gid)
+                    if e:
+                        e.category, e.urgency, e.summary = r["category"], r["urgency"], r["summary"]
+                        e.needs_reply, e.reason, e.important = r["needs_reply"], r["reason"], r.get("important", False)
+                        e.due_date, e.amount = r["due_date"], r["amount"]
+                        alert = (await s.execute(select(Alert).where(Alert.thread_id == e.thread_id))).scalar_one_or_none()
+                        if e.urgency >= 3 and alert is None:
+                            s.add(Alert(thread_id=e.thread_id, gmail_id=e.gmail_id, reason=e.reason, channel="backfill"))
+                        elif e.urgency < 3 and alert is not None and alert.status == "sent" and alert.gmail_id == gid:
+                            await s.delete(alert)
+                        await s.commit()
+            except ReconnectRequired:
+                raise
+            except Exception:
+                log.exception("recheck failed for one message")
+            if n % 10 == 0 or n == len(ids):
+                state["recheck"]["done"] = n
+                publish("recheck", state["recheck"])
+        publish("alert", {})
+        publish("recheck", {"done": len(ids), "total": len(ids), "finished": True})
+    finally:
+        state["recheck"] = None
+        _recheck_running = False
 
 
 async def sync_drafts() -> None:

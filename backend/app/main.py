@@ -1,3 +1,5 @@
+from pathlib import Path
+import asyncio
 import hashlib
 import hmac
 import json
@@ -17,6 +19,11 @@ from sqlalchemy import func, select
 from sse_starlette.sse import EventSourceResponse
 
 from . import poller
+from .accounts import router as accounts_router
+from .db import active_email
+from .google_auth import web_mode
+from .onboarding import profile_json, router as onboarding_router
+from .profile import cached, cached_names, get_user, refresh_cache
 from .openui import chat_instructions, reply_format
 from .alerts import in_quiet_hours, send_push
 from .config import ROOT, settings
@@ -37,13 +44,32 @@ SESSION_TTL = 30 * 24 * 3600
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.login_required and settings.app_password in ("", "change-me"):
+        raise RuntimeError("Set APP_PASSWORD before hosting this app: it has access to your email.")
+    _check_data_dir()
     await init_db()
+    await refresh_cache()
     sched = poller.start_scheduler()
     yield
     sched.shutdown(wait=False)
 
 
 app = FastAPI(title="Personal Email Agent", lifespan=lifespan)
+app.include_router(onboarding_router)
+app.include_router(accounts_router)
+
+
+def _check_data_dir() -> None:
+    d = settings.data_path
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ".write-test").write_text("ok")
+        (d / ".write-test").unlink()
+    except OSError as e:
+        raise RuntimeError(f"DATA_DIR {d} is not writable: {e}") from e
+    if settings.railway_environment and not str(d).startswith("/data"):
+        log.warning("DATA_DIR=%s is not a Railway Volume path; data will be LOST on every deploy. "
+                    "Attach a Volume at /data and set DATA_DIR=/data.", d)
 
 
 # ---------- auth (single user, app password) ----------
@@ -59,7 +85,18 @@ def _valid_cookie(value: str | None) -> bool:
     return hmac.compare_digest(sig, _sign(ts)) and ts.isdigit() and time.time() - int(ts) < SESSION_TTL
 
 
-# Password login disabled: the server binds to 127.0.0.1, so only this machine can reach it.
+# Login is required when hosted (Railway) or REQUIRE_LOGIN=true. Locally it stays off by choice.
+_OPEN = {"/api/login", "/api/me", "/api/logout"}
+_fails: dict[str, list[float]] = {}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if settings.login_required and path.startswith("/api/") and path not in _OPEN:
+        if not _valid_cookie(request.cookies.get(COOKIE)):
+            return JSONResponse({"detail": "login required"}, status_code=401)
+    return await call_next(request)
 
 
 class Login(BaseModel):
@@ -67,11 +104,19 @@ class Login(BaseModel):
 
 
 @app.post("/api/login")
-async def login(body: Login, response: Response):
-    if not hmac.compare_digest(body.password, settings.app_password):
+async def login(body: Login, request: Request, response: Response):
+    ip = request.client.host if request.client else "?"
+    recent = [t for t in _fails.get(ip, []) if time.time() - t < 600]
+    if len(recent) >= 5:
+        raise HTTPException(429, "Too many attempts — wait 10 minutes")
+    if not hmac.compare_digest(body.password.encode(), settings.app_password.encode()):
+        _fails[ip] = recent + [time.time()]
         raise HTTPException(401, "Wrong password")
+    _fails.pop(ip, None)
     ts = str(int(time.time()))
-    response.set_cookie(COOKIE, f"{ts}.{_sign(ts)}", httponly=True, samesite="strict", max_age=SESSION_TTL)
+    # Lax (not Strict) so the cookie survives the redirect back from Google sign-in.
+    response.set_cookie(COOKIE, f"{ts}.{_sign(ts)}", httponly=True, samesite="lax", max_age=SESSION_TTL,
+                        secure=request.url.scheme == "https" or bool(settings.railway_environment))
     return {"ok": True}
 
 
@@ -83,14 +128,47 @@ async def logout(response: Response):
 
 @app.get("/api/me")
 async def me(request: Request):
-    return {"logged_in": True, "default_password": False}
+    logged_in = not settings.login_required or _valid_cookie(request.cookies.get(COOKIE))
+    if not logged_in:
+        return {"logged_in": False, "login_required": True, "onboarded": False, "profile": None}
+    p, _ = cached()
+    user = await _user()
+    connected = bool(user and user.google_refresh_token and not user.needs_reconnect)
+    return {"logged_in": True, "login_required": settings.login_required, "onboarded": bool(p and p.onboarded_at),
+            "connected": connected,
+            "profile": profile_json(p), "account": active_email(), "oauth_mode": "web" if web_mode() else "desktop"}
+
+
+def final_text(r) -> str:
+    """The model's last message only. `output_text` joins every message item, which can repeat a reply."""
+    msgs = [o for o in r.output if getattr(o, "type", "") == "message"]
+    if not msgs:
+        return r.output_text
+    parts = [c.text for c in (msgs[-1].content or []) if getattr(c, "type", "") == "output_text"]
+    return "".join(parts) or r.output_text
+
+
+class RecheckIn(BaseModel):
+    days: int = 14
+
+
+@app.post("/api/recheck")
+async def recheck(body: RecheckIn | None = None):
+    """Re-classify stored mail from the last N days with the current urgent/important rules."""
+    user = await _user()
+    if not user or not user.google_refresh_token:
+        raise HTTPException(400, "Connect Gmail first")
+    if poller.state.get("recheck"):
+        raise HTTPException(409, "A re-check is already running")
+    asyncio.create_task(poller.recheck(max(1, min(body.days if body else 14, 14))))
+    return {"ok": True}
 
 
 # ---------- status & dashboard ----------
 
 async def _user() -> User | None:
     async with SessionLocal() as s:
-        return (await s.execute(select(User).where(User.email == settings.gmail_account))).scalar_one_or_none()
+        return await get_user(s)
 
 
 @app.get("/api/health")
@@ -99,10 +177,13 @@ async def health():
     return {
         "ok": True,
         "gmail_connected": bool(user and user.google_refresh_token and not user.needs_reconnect),
-        "account": settings.gmail_account,
+        "account": user.email if user else cached()[1],
+        "agent_name": cached_names()[0],
+        "user_name": cached_names()[1],
         "quiet_hours": user.quiet_hours if user else settings.quiet_hours,
         "quiet_now": in_quiet_hours(user.quiet_hours if user else settings.quiet_hours),
         "backfill": poller.state["backfill"],
+        "recheck": poller.state.get("recheck"),
         "last_poll": poller.state["last_poll"],
         "last_error": poller.state["last_error"],
         "vapid_public_key": settings.vapid_public_key,
@@ -124,10 +205,14 @@ async def dashboard():
             select(Email).where(Email.needs_reply.is_(True), Email.received_at >= since - timedelta(days=6))
             .order_by(Email.received_at.desc()).limit(20)
         )).scalars().all()
+        important = (await s.execute(
+            select(Email).where(Email.important.is_(True), Email.received_at >= since - timedelta(days=13))
+            .order_by(Email.received_at.desc()).limit(20)
+        )).scalars().all()
         processed = await s.scalar(select(func.count()).select_from(Email).where(Email.received_at >= since))
         total = await s.scalar(select(func.count()).select_from(Email))
     return {
-        "counts": {"urgent": len(alerts), "needs_reply": len(needs_reply), "drafts": len(drafts),
+        "counts": {"urgent": len(alerts), "needs_reply": len(needs_reply), "important": len(important), "drafts": len(drafts),
                    "processed_today": processed or 0, "total": total or 0},
         "urgent": [{
             "id": a.id, "thread_id": a.thread_id, "category": e.category, "sender": e.sender,
@@ -138,6 +223,10 @@ async def dashboard():
             "thread_id": e.thread_id, "sender": e.sender, "summary": e.summary or e.subject,
             "received_at": e.received_at.isoformat(),
         } for e in needs_reply],
+        "important": [{
+            "thread_id": e.thread_id, "sender": e.sender, "summary": e.summary or e.subject,
+            "category": e.category, "received_at": e.received_at.isoformat(),
+        } for e in important],
         "drafts": [{"draft_id": d.draft_id, "thread_id": d.thread_id, "to": d.to, "subject": d.subject,
                     "snippet": d.snippet} for d in drafts],
     }
@@ -238,7 +327,9 @@ async def get_settings():
 @app.put("/api/settings")
 async def put_settings(body: SettingsIn):
     async with SessionLocal() as s:
-        user = (await s.execute(select(User).where(User.email == settings.gmail_account))).scalar_one()
+        user = await get_user(s)
+        if user is None:
+            raise HTTPException(400, "Connect Gmail first")
         if body.quiet_hours is not None:
             in_quiet_hours(body.quiet_hours)  # validates format
             user.quiet_hours = body.quiet_hours
@@ -275,7 +366,7 @@ async def push_subscribe(sub: PushSub):
 
 @app.post("/api/push/test")
 async def push_test():
-    n = await send_push({"title": "Inbox Agent", "body": "Test notification — alerts are working.", "url": "/"})
+    n = await send_push({"title": cached_names()[0], "body": "Test notification — alerts are working.", "url": "/"})
     return {"sent": n}
 
 
@@ -331,7 +422,8 @@ async def chat(body: ChatIn):
         log.info("chat turn via %s model=%s response=%s", "gateway" if via_gateway else "openai", model, r.id)
         calls = [o for o in r.output if o.type == "function_call"]
         if not calls:
-            return {"reply": r.output_text, "tools": used, "format": reply_format(r.output_text)}
+            text = final_text(r)
+            return {"reply": text, "tools": used, "format": reply_format(text)}
         inputs += [o.model_dump(exclude_none=True) for o in r.output if o.type in ("function_call", "reasoning")]
         for c in calls:
             used.append(c.name)

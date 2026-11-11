@@ -39,6 +39,7 @@ class Email(Base):
     due_date: Mapped[date | None] = mapped_column(Date)
     amount: Mapped[dict | None] = mapped_column(JSON)
     reason: Mapped[str | None] = mapped_column(Text)
+    important: Mapped[bool] = mapped_column(Boolean, default=False)  # must-read, per the owner's rules
 
 
 class Alert(Base):
@@ -86,3 +87,17 @@ class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
     endpoint: Mapped[str] = mapped_column(String, primary_key=True)
     keys: Mapped[dict] = mapped_column(JSON)
+
+
+class Profile(Base):
+    """The owner's first-run setup (single row)."""
+    __tablename__ = "profile"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_name: Mapped[str] = mapped_column(String, default="")
+    user_email: Mapped[str] = mapped_column(String, default="")
+    agent_name: Mapped[str] = mapped_column(String, default="Inbox Agent")
+    urgent_criteria: Mapped[str] = mapped_column(Text, default="")
+    important_criteria: Mapped[str] = mapped_column(Text, default="")
+    urgent_senders: Mapped[list] = mapped_column(JSON, default=list)
+    important_senders: Mapped[list] = mapped_column(JSON, default=list)
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

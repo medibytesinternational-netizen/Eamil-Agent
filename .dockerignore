@@ -1,0 +1,10 @@
+.env
+secrets/
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.db
+backend/data/
+frontend/dist
+.playwright-mcp/
+.git
